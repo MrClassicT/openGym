@@ -1,8 +1,10 @@
 name: Publish Docker images
 
+# Preserve the fork's branch and tag publishing flow. pre-rel is the deployed
+# branch; main publishes edge so upstream syncs cannot replace its latest image.
 on:
   push:
-    branches: [main]
+    branches: [main, pre-rel]
     tags: ['v*']
   workflow_dispatch:
 
@@ -32,7 +34,13 @@ jobs:
       - name: Set version metadata
         id: version_meta
         run: |
-          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          # On a tag the ref is refs/tags/vX.Y.Z; on a branch push it is a branch ref,
+          # which would otherwise label the image "refs/heads/main".
+          case "$GITHUB_REF" in
+            refs/tags/*) VERSION="${GITHUB_REF#refs/tags/}" ;;
+            *)           VERSION="${GITHUB_REF_NAME}-${GITHUB_SHA::7}" ;;
+          esac
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "VCS_REF=${GITHUB_SHA}" >> $GITHUB_OUTPUT
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
@@ -50,7 +58,8 @@ jobs:
         with:
           images: ghcr.io/${{ steps.repo.outputs.owner }}/opengym-${{ matrix.image }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/pre-rel' || startsWith(github.ref, 'refs/tags/') }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
@@ -58,11 +67,13 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
+          target: ${{ matrix.image == 'api' && 'default' || '' }}
           platforms: linux/amd64,linux/arm64
           build-args: |
             VERSION=${{ steps.version_meta.outputs.VERSION }}
             VCS_REF=${{ steps.version_meta.outputs.VCS_REF }}
             BUILD_DATE=${{ steps.version_meta.outputs.BUILD_DATE }}
+            APP_BUILD=${{ github.sha }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
