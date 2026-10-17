@@ -47,12 +47,14 @@ test('the same profile always gets the same handle, and two profiles never share
   assert.notEqual(a1, b);
 });
 
-test('review payload carries the plan, the window, effort and aggregates', () => {
+test('review payload carries the plan, the window, effort and aggregates', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2030-01-01T12:00:00Z') });
   const p = payload.build(sampleState(), { handle: handleFor('u1'), kind: 'review', note: 'shoulder pinches' });
   assert.equal(p.task, 'review');
   assert.equal(p.plan.routines.length, 1);
   assert.equal(p.plan.routines[0].ex[0].name, '3/4 sit-up', 'exercise names are resolved for the model');
   assert.equal(p.window.workouts.length, 1);
+  assert.equal(p.window.workouts[0].d, '2030-01-01', 'the shared fixture stays inside the review window as time passes');
   assert.equal(p.window.workouts[0].entries[0].sets[0].rpe, 9.5, 'effort survives into the payload');
   assert.equal(p.userNote, 'shoulder pinches');
   assert.equal(p.meta.effortScale, 'rpe');
